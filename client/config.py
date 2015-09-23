@@ -18,5 +18,6 @@ hosts = ".youtube.com|.atm.youku.com|.googlevideo.com|av.vimeo.com|smile-*.nicov
 AUTORANGE_HOSTS      = tuple(hosts.split('|'))
 AUTORANGE_HOSTS_TAIL = tuple(x.rpartition('*')[2] for x in AUTORANGE_HOSTS)
 
-PROXY_SERVER = "http://www.icemoon1987.com"
+PROXY_SERVER = "http://www.icemoon1987.com/"
+#PROXY_SERVER = "http://127.0.0.1:8808"
 

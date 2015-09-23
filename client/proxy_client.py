@@ -153,30 +153,33 @@ class proxy_client(object):
 
 		response.app_status = response.status
 
-		print "aaaa: " + str(response.status)
+		print "status: " + str(response.status)
 		print dir(response)
 		print response.msg
 		print response.reason
+		print response.getheaders()
+		print response.read()
 
-		return response
-
-		if response.status != 200:
-			if response.status in (400, 405):
-				# filter by some firewall
-				common.GAE_CRLF = 0
-			return response
 		data = response.read(4)
+
+		return
+
 		if len(data) < 4:
 			response.status = 502
 			response.fp = cStringIO.StringIO('connection aborted. too short leadtype data=%r' % data)
 			return response
+
 		response.status, headers_length = struct.unpack('!hh', data)
+
 		data = response.read(headers_length)
+
 		if len(data) < headers_length:
 			response.status = 502
 			response.fp = cStringIO.StringIO('connection aborted. too short headers data=%r' % data)
 			return response
+
 		response.msg = httplib.HTTPMessage(cStringIO.StringIO(zlib.decompress(data, -15)))
+
 		return response
 
 

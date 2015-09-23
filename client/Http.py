@@ -408,12 +408,14 @@ class Http(object):
             _, username, password, _ = urllib2._parse_proxy(self.proxy)
             if username and password:
                 request_data += 'Proxy-Authorization: Basic %s\r\n' % base64.b64encode('%s:%s' % (username, password))
+
         request_data += '\r\n'
 
         if not payload:
             sock.sendall(request_data)
         else:
             if isinstance(payload, basestring):
+
                 request_data += payload
                 sock.sendall(request_data)
             elif hasattr(payload, 'read'):
@@ -453,15 +455,18 @@ class Http(object):
         else:
             host, _, port = netloc.rpartition(':')
             port = int(port)
-        path += '?' + query
+
+        #print "path: " + path
+        #print "query: " + query
+        #print "url: " + url
+        #print "host: " + host
+        #print "port: " + str(port)
+
+        if query:
+            path += '?' + query
 
         if 'Host' not in headers:
             headers['Host'] = host
-
-        print url
-        print netloc
-        print host
-        print port
 
         for i in xrange(self.max_retry):
             sock = None
@@ -483,6 +488,7 @@ class Http(object):
                 if sock:
                     if scheme == 'https':
                         crlf = 0
+
                     return self._request(ssl_sock or sock, method, path, self.protocol_version, headers, payload, bufsize=bufsize, crlf=crlf, return_sock=return_sock)
             except Exception as e:
                 self.logger.debug('Http.request "%s %s" failed:%s', method, url, e)
