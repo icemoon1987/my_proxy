@@ -355,11 +355,7 @@ class Http(object):
             if remote:
                 remote.close()
 
-
     def parse_request(self, rfile, bufsize=__bufsize__):
-
-        result = {}
-
         line = rfile.readline(bufsize)
         if not line:
             raise EOFError('empty line')
@@ -373,25 +369,7 @@ class Http(object):
             keyword = keyword.title()
             value = value.strip()
             headers[keyword] = value
-
-        host = headers.get('Host', '')
-
-        if path[0] == '/' and host:
-            path = 'http://%s%s' % (host, path)
-
-        content_length = int(headers.get('Content-Length', 0))
-        payload = rfile.read(content_length) if content_length else ''
-
-        result["method"] = method
-        result["path"] = path
-        result["version"] = version
-        result["headers"] = headers
-        result["host"] = host
-        result["content_length"] = content_length
-        result["payload"] = payload
-
-        return result
-
+        return method, path, version.strip(), headers
 
     def _request(self, sock, method, path, protocol_version, headers, payload, bufsize=__bufsize__, crlf=None, return_sock=None):
         skip_headers = self.skip_headers

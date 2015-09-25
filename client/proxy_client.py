@@ -128,6 +128,7 @@ except ImportError:
 	OpenSSL = None
 
 from Http import Http
+from CertUtil import CertUtil
 
 class proxy_client(object):
 
@@ -153,32 +154,22 @@ class proxy_client(object):
 
 		response.app_status = response.status
 
+		#self.logger.info("proxy return: %s %s" % (response.status, response.reason) )
+
+		'''
 		print "status: " + str(response.status)
-		print dir(response)
 		print response.msg
 		print response.reason
 		print response.getheaders()
 		print response.read()
+		'''
 
-		data = response.read(4)
-
-		return
-
-		if len(data) < 4:
-			response.status = 502
-			response.fp = cStringIO.StringIO('connection aborted. too short leadtype data=%r' % data)
-			return response
-
-		response.status, headers_length = struct.unpack('!hh', data)
-
-		data = response.read(headers_length)
-
-		if len(data) < headers_length:
-			response.status = 502
-			response.fp = cStringIO.StringIO('connection aborted. too short headers data=%r' % data)
-			return response
-
-		response.msg = httplib.HTTPMessage(cStringIO.StringIO(zlib.decompress(data, -15)))
+		if 'x-status' in response.msg:
+			response.status = int(response.msg['x-status'])
+			del response.msg['x-status']
+		if 'status' in response.msg:
+			response.status = int(response.msg['status'])
+			del response['status']
 
 		return response
 
@@ -226,38 +217,252 @@ class proxy_client(object):
 		proxy_request['proxy_payload_len'] = len(proxy_payload)
 		proxy_request['need_crlf'] = need_crlf
 
+
 		return proxy_request
 
 
+	def parse_proxy_response(self, response, sock):
+
+		result = ""
+
+		wfile = sock.makefile('wb', 0)
+		if 'Set-Cookie' in response.msg:
+			response.msg['Set-Cookie'] = re.sub(', ([^ =]+(?:=|$))', '\\r\\nSet-Cookie: \\1', response.msg['Set-Cookie'])
+		wfile.write('HTTP/1.1 %s\r\n%s\r\n' % (response.status, ''.join('%s: %s\r\n' % (k.title(), v) for k, v in response.getheaders() if k != 'transfer-encoding')))
+
+		while 1:
+			data = response.read(8192)
+			if not data:
+				break
+			wfile.write(data)
+		response.close()
+
+		'''
+		result = ""
+
+		if 'Set-Cookie' in proxy_response.msg:
+			proxy_response.msg['Set-Cookie'] = re.sub(', ([^ =]+(?:=|$))', '\\r\\nSet-Cookie: \\1', proxy_response.msg['Set-Cookie'])
+
+		result += 'HTTP/1.1 %s\r\n%s\r\n' % (proxy_response.status, ''.join('%s: %s\r\n' % (k.title(), v) for k, v in proxy_response.getheaders() if k != 'transfer-encoding'))
+
+		result += proxy_response.read()
+		proxy_response.close()
+		'''
+
+		return result
+
+
+	def send_proxy_result(self, proxy_result, sock):
+
+		wfile = sock.makefile('wb', 0)
+
+		self.logger.info("proxy_result_len: " + str(len(proxy_result)))
+
+		wfile.write(proxy_result)
+
+		wfile.close()
+		sock.close()
+
+		return
+
+	def parse_user_request(self, sock):
+
+		result = {}
+
+		''' parse http parameters '''
+		rfile = sock.makefile('rb', __bufsize__)
+		method, path, version, headers = self.http_handler.parse_request(rfile)
+
+		''' handle CONNECT requests '''
+		__realsock = None
+		__realrfile = None
+		if method == 'CONNECT':
+			host, _, port = path.rpartition(':')
+			port = int(port)
+			keyfile, certfile = CertUtil.get_cert(host)
+			sock.sendall('HTTP/1.1 200 OK\r\n\r\n')
+			__realsock = sock
+			__realrfile = rfile
+			try:
+				sock = ssl.wrap_socket(__realsock, certfile=certfile, keyfile=keyfile, server_side=True)
+			except Exception as e:
+				__realrfile.close()
+				__realsock.close()
+				return
+			rfile = sock.makefile('rb', __bufsize__)
+			try:
+				method, path, version, headers = self.http_handler.parse_request(rfile)
+			except (EOFError, socket.error) as e:
+				if e[0] in ('empty line', 10053, errno.EPIPE):
+					return rfile.close()
+				raise
+			if path[0] == '/' and host:
+				path = 'https://%s%s' % (headers['Host'], path)
+
+		else:
+			host = headers.get('Host', '')
+			if path[0] == '/' and host:
+				path = 'http://%s%s' % (host, path)
+
+		content_length = int(headers.get('Content-Length', 0))
+		payload = rfile.read(content_length) if content_length else ''
+
+		result["method"] = method
+		result["path"] = path
+		result["version"] = version
+		result["headers"] = headers
+		result["host"] = host
+		result["content_length"] = content_length
+		result["payload"] = payload
+
+		return result
+
+	def paasproxy_handler(self, sock, address):
+
+		http = self.http_handler
+
+		rfile = sock.makefile('rb', __bufsize__)
+		try:
+			method, path, version, headers = http.parse_request(rfile)
+		except (EOFError, socket.error) as e:
+			if e[0] in ('empty line', 10053, errno.EPIPE):
+				return rfile.close()
+			raise
+
+		headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.99 Safari/537.36'
+		remote_addr, remote_port = address
+
+		__realsock = None
+		__realrfile = None
+		if method == 'CONNECT':
+			host, _, port = path.rpartition(':')
+			port = int(port)
+			keyfile, certfile = CertUtil.get_cert(host)
+			logging.info('%s:%s "%s:%d HTTP/1.1" - -' % (address[0], address[1], host, port))
+			sock.sendall('HTTP/1.1 200 OK\r\n\r\n')
+			__realsock = sock
+			__realrfile = rfile
+			try:
+				sock = ssl.wrap_socket(__realsock, certfile=certfile, keyfile=keyfile, server_side=True)
+			except Exception as e:
+				logging.exception('ssl.wrap_socket(__realsock=%r) failed: %s', __realsock, e)
+				__realrfile.close()
+				__realsock.close()
+				return
+			rfile = sock.makefile('rb', __bufsize__)
+			try:
+				method, path, version, headers = http.parse_request(rfile)
+			except (EOFError, socket.error) as e:
+				if e[0] in ('empty line', 10053, errno.EPIPE):
+					return rfile.close()
+				raise
+			if path[0] == '/' and host:
+				path = 'https://%s%s' % (headers['Host'], path)
+
+		host = headers.get('Host', '')
+		if path[0] == '/' and host:
+			path = 'http://%s%s' % (host, path)
+
+		try:
+			try:
+				content_length = int(headers.get('Content-Length', 0))
+				payload = rfile.read(content_length) if content_length else ''
+				response = self.paas_urlfetch(method, path, headers, payload, cfg.PROXY_SERVER)
+				logging.info('%s:%s "PAAS %s %s HTTP/1.1" %s -', remote_addr, remote_port, method, path, response.status)
+			except socket.error as e:
+				if e.reason[0] not in (11004, 10051, 10060, 'timed out', 10054):
+					raise
+			except Exception as e:
+				logging.exception('error: %s', e)
+				raise
+
+			if response.app_status in (400, 405):
+				http.crlf = 0
+
+			wfile = sock.makefile('wb', 0)
+			if 'Set-Cookie' in response.msg:
+				response.msg['Set-Cookie'] = re.sub(', ([^ =]+(?:=|$))', '\\r\\nSet-Cookie: \\1', response.msg['Set-Cookie'])
+			wfile.write('HTTP/1.1 %s\r\n%s\r\n' % (response.status, ''.join('%s: %s\r\n' % (k.title(), v) for k, v in response.getheaders() if k != 'transfer-encoding')))
+
+			while 1:
+				data = response.read(8192)
+				if not data:
+					break
+				wfile.write(data)
+			response.close()
+
+		except socket.error as e:
+			# Connection closed before proxy return
+			if e[0] not in (10053, errno.EPIPE):
+				raise
+		finally:
+			rfile.close()
+			sock.close()
+			if __realrfile:
+				__realrfile.close()
+			if __realsock:
+				__realsock.close()
+
+
+	def paas_urlfetch(self, method, url, headers, payload, fetchserver, **kwargs):
+		# deflate = lambda x:zlib.compress(x)[2:-4]
+
+		http = self.http_handler
+
+		if payload:
+			if len(payload) < 10 * 1024 * 1024 and 'Content-Encoding' not in headers:
+				zpayload = zlib.compress(payload)[2:-4]
+				if len(zpayload) < len(payload):
+					payload = zpayload
+					headers['Content-Encoding'] = 'deflate'
+			headers['Content-Length'] = str(len(payload))
+		skip_headers = http.skip_headers
+		metadata = 'User-Method:%s\nUser-Url:%s\n%s\n%s\n' % (method, url, '\n'.join('User-%s:%s'%(k,v) for k,v in kwargs.iteritems() if v), '\n'.join('%s:%s'%(k,v) for k,v in headers.iteritems() if k not in skip_headers))
+		metadata = zlib.compress(metadata)[2:-4]
+		app_payload = '%s%s%s' % (struct.pack('!h', len(metadata)), metadata, payload)
+		response = http.request('POST', fetchserver, app_payload, {'Content-Length':len(app_payload)}, crlf=0)
+		response.app_status = response.status
+		if 'x-status' in response.msg:
+			response.status = int(response.msg['x-status'])
+			del response.msg['x-status']
+		if 'status' in response.msg:
+			response.status = int(response.msg['status'])
+			del response['status']
+		return response
+
+	
 	def proxy_handler(self, sock, address):
 
 		#try:
 		# Receive and parse user requests
-		rfile = sock.makefile('rb', __bufsize__)
-		user_request = self.http_handler.parse_request(rfile)
+		#user_request = self.parse_user_request(sock)
+		#logging.info("user request: %s %s" % (user_request["method"], user_request["path"]))
 
 		# Compose proxy requests
-		proxy_request = self.compose_proxy_request(user_request)
+		#proxy_request = self.compose_proxy_request(user_request)
 
 		# Send proxy request to server, and get proxy response
-		proxy_response = self.send_proxy_request(proxy_request, cfg.PROXY_SERVER)
-
-		# Get proxy respons from server
+		#proxy_response = self.send_proxy_request(proxy_request, cfg.PROXY_SERVER)
 
 		# Parse proxy respons
+		#proxy_result = self.parse_proxy_response(proxy_response, sock)
 
 		# Send respons back to user
-		#user_addr, user_port = address
+		#self.send_proxy_result(proxy_result, sock)
 
-		#except Exception, ex:
-			#self.logger.warning(ex.__str__())
-			#return
+		'''
+		except Exception, ex:
+			self.logger.warning(ex.__str__())
+		'''
+
+		self.paasproxy_handler(sock, address)
 
 		return
 
 
 	def run(self):
-
+		
+		CertUtil.check_ca()
 		self.logger.info("proxy_client init finish.")
 		server = gevent.server.StreamServer((self.listen_ip, self.listen_port), self.proxy_handler)
 		self.logger.info("proxy_client listen on: %s:%d" % (self.listen_ip, self.listen_port) )
