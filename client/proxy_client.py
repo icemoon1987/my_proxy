@@ -321,6 +321,7 @@ class proxy_client(object):
 
 		http = self.http_handler
 
+		# Get user request url and parse it
 		rfile = sock.makefile('rb', __bufsize__)
 		try:
 			method, path, version, headers = http.parse_request(rfile)
@@ -329,26 +330,33 @@ class proxy_client(object):
 				return rfile.close()
 			raise
 
-		headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.99 Safari/537.36'
+		# Uncomment this line if you need to fake browser.
+		#headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.99 Safari/537.36'
 		remote_addr, remote_port = address
 
 		__realsock = None
 		__realrfile = None
+
+		# For CONNECT request, establish a fake connection.
 		if method == 'CONNECT':
 			host, _, port = path.rpartition(':')
 			port = int(port)
 			keyfile, certfile = CertUtil.get_cert(host)
-			logging.info('%s:%s "%s:%d HTTP/1.1" - -' % (address[0], address[1], host, port))
+			logging.info('CONNECT %s:%s "%s:%d HTTP/1.1" - -' % (address[0], address[1], host, port))
+			# Tell the user browser, the connection is established.
 			sock.sendall('HTTP/1.1 200 OK\r\n\r\n')
 			__realsock = sock
 			__realrfile = rfile
 			try:
+				# Warp the connection with fake certificate
 				sock = ssl.wrap_socket(__realsock, certfile=certfile, keyfile=keyfile, server_side=True)
 			except Exception as e:
 				logging.exception('ssl.wrap_socket(__realsock=%r) failed: %s', __realsock, e)
 				__realrfile.close()
 				__realsock.close()
 				return
+
+			# Get user browser's https request
 			rfile = sock.makefile('rb', __bufsize__)
 			try:
 				method, path, version, headers = http.parse_request(rfile)
@@ -365,6 +373,7 @@ class proxy_client(object):
 
 		try:
 			try:
+				# Wrap the user browser's request into a POST request, send the POST request to proxy_server
 				content_length = int(headers.get('Content-Length', 0))
 				payload = rfile.read(content_length) if content_length else ''
 				response = self.paas_urlfetch(method, path, headers, payload, cfg.PROXY_SERVER)
@@ -379,11 +388,13 @@ class proxy_client(object):
 			if response.app_status in (400, 405):
 				http.crlf = 0
 
+			# Get the proxy_server's response, unwarp the content.
 			wfile = sock.makefile('wb', 0)
 			if 'Set-Cookie' in response.msg:
 				response.msg['Set-Cookie'] = re.sub(', ([^ =]+(?:=|$))', '\\r\\nSet-Cookie: \\1', response.msg['Set-Cookie'])
 			wfile.write('HTTP/1.1 %s\r\n%s\r\n' % (response.status, ''.join('%s: %s\r\n' % (k.title(), v) for k, v in response.getheaders() if k != 'transfer-encoding')))
 
+			# Send the real page back to user browser.
 			while 1:
 				data = response.read(8192)
 				if not data:
@@ -476,7 +487,5 @@ if __name__ == '__main__':
 	try:
 		client = proxy_client(cfg.LISTEN_IP, cfg.LISTEN_PORT)
 		client.run()
-	except KeyboardInterrupt:
-		pass
 	except Exception, ex:
 		print ex.__str__()
