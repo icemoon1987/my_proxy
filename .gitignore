@@ -1,0 +1,5 @@
+*.pyc
+*.crt
+client/certs/*
+*.pyc
+*.pyc
