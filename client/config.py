@@ -1,5 +1,19 @@
 #!/usr/bin/env python
-# coding:utf-8
+# -*- coding: utf-8 -*-
+
+######################################################
+#
+# File Name:  config.py
+#
+# Function:   Client side proxy config file.
+#
+# Usage:  import config
+#
+# Author: panwenhai
+#
+# Create Time:    2016-08-11 13:39:30
+#
+######################################################
 
 LISTEN_IP = "127.0.0.1"
 LISTEN_PORT = 8087
@@ -7,7 +21,6 @@ LISTEN_PORT = 8087
 DEBUG_SWITCH = False
 
 AUTORANGE_MAXSIZE = 1048576
-
 hosts = ".youtube.com|.atm.youku.com|.googlevideo.com|av.vimeo.com|smile-*.nicovideo.jp|video.*.fbcdn.net|s*.last.fm|x*.last.fm|.xvideos.com|.phncdn.com|.edgecastcdn.net"
 
 #threads = 2

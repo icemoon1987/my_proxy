@@ -1,2 +1,4 @@
 *.pyc
+client/*.pyc
 client/certs/*
+server/*.pyc
