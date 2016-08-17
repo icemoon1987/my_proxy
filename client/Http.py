@@ -355,6 +355,16 @@ class Http(object):
             if remote:
                 remote.close()
 
+    ##
+    # @brief    parse http request
+    #
+    # @param    rfile: request content
+    # @param    bufsize: http buffer size
+    #
+    # @return   method: request method
+    #           path: request url
+    #           version: http version info
+    #           headers: map for http header info
     def parse_request(self, rfile, bufsize=__bufsize__):
         line = rfile.readline(bufsize)
         if not line:

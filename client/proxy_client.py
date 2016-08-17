@@ -3,9 +3,10 @@
 
 ######################################################
 #
-# File Name:  proxy_client.py
+# File Name:    proxy_client.py
 #
-# Function:   The client side of the proxy. Pack user request in a post request and sent it to server side.
+# Function:     The client side of the proxy. Pack user request in a post request and sent it to server side.
+#               This client servers as a server for user browser.
 #
 # Usage:  python proxy_client.py
 #
@@ -17,7 +18,7 @@
 
 __version__ = '1.0.0'
 
-# Socket buffer size
+# Socket buffer size in bytes
 __bufsize__ = 1024*1024
 
 import sys
@@ -308,8 +309,15 @@ class proxy_client(object):
 	return result
 
 
-
+    ##
+    # @brief    handler for user browser requests
+    #
+    # @param    sock: socket for this request
+    # @param    address: ip address of this request
+    #
+    # @return   
     def paasproxy_handler(self, sock, address):
+
 	http = self.http_handler
 
 	# Get user request url and parse it
@@ -440,19 +448,21 @@ class proxy_client(object):
 	    del response['status']
 
 	return response
-
 	
-    def proxy_handler(self, sock, address):
-	self.paasproxy_handler(sock, address)
-	return
-
-
+    ##
+    # @brief   start the client and wait for browser requests
+    #
+    # @return  none 
     def run(self):
+
+        # Check certificate, the certificate will be used to warp https connections
 	CertUtil.check_ca()
-	self.logger.info("proxy_client init finish.")
-	server = gevent.server.StreamServer((self.listen_ip, self.listen_port), self.proxy_handler)
+
+        # Start a stream server, wait for incoming http requests
+	server = gevent.server.StreamServer((self.listen_ip, self.listen_port), self.paasproxy_handler)
 	self.logger.info("proxy_client listen on: %s:%d" % (self.listen_ip, self.listen_port) )
 	server.serve_forever()
+
 	return
 
 
