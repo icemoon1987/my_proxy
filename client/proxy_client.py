@@ -336,7 +336,7 @@ class proxy_client(object):
         # TODO: why send packed metadata and metadata in the same time?
 	app_payload = '%s%s%s' % (struct.pack('!h', len(metadata)), metadata, payload)
 
-        # Send to proxy server. TODO: what is crlf?
+        # Send the composed request to proxy server by a POST request. TODO: what is crlf?
 	response = http.request('POST', fetchserver, app_payload, {'Content-Length':len(app_payload)}, crlf=0)
 
         # The status of the proxy server's response is stored in app_status.

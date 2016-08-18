@@ -1,5 +1,20 @@
 #!/usr/bin/env python
-# coding:utf-8
+# -*- coding: utf-8 -*-
+
+######################################################
+#
+# File Name:  Http.py
+#
+# Function:   Http handle class.
+#
+# Usage:  
+#
+# Author: panwenhai
+#
+# Create Time:    2016-08-18 17:47:48
+#
+######################################################
+
 
 __bufsize__ = 1024*1024
 
@@ -9,7 +24,7 @@ import config as cfg
 import logging
 
 try:
-    # Use gevent by default
+    # Use gevent by default. If gevent is not installed, use Queue, thread, SocketServer instead.
     import gevent
     import gevent.queue
     import gevent.monkey
@@ -21,8 +36,6 @@ try:
     gevent.monkey.patch_all(dns=gevent.version_info[0]>=1)
 except ImportError:
 
-    # if gevent is not installed, use Queue, thread, SocketServer instead
-
     print 'WARNING: python-gevent not installed. Use SocketServer instead'
 
     import Queue
@@ -30,6 +43,7 @@ except ImportError:
     import threading
     import SocketServer
 
+    # Warp all gevent functions
     def GeventImport(name):
         import sys
         sys.modules[name] = type(sys)(name)
@@ -127,14 +141,24 @@ except ImportError:
     OpenSSL = None
 
 
+##
+# @brief    Http handler class
 class Http(object):
-    """Http Request Class"""
 
     MessageClass = dict
     protocol_version = 'HTTP/1.1'
     skip_headers = frozenset(['Vary', 'Via', 'X-Forwarded-For', 'Proxy-Authorization', 'Proxy-Connection', 'Upgrade', 'X-Chrome-Variations'])
     dns_blacklist = set(['4.36.66.178', '8.7.198.45', '37.61.54.158', '46.82.174.68', '59.24.3.173', '64.33.88.161', '64.33.99.47', '64.66.163.251', '65.104.202.252', '65.160.219.113', '66.45.252.237', '72.14.205.104', '72.14.205.99', '78.16.49.15', '93.46.8.89', '128.121.126.139', '159.106.121.75', '169.132.13.103', '192.67.198.6', '202.106.1.2', '202.181.7.85', '203.161.230.171', '207.12.88.98', '208.56.31.43', '209.145.54.50', '209.220.30.174', '209.36.73.33', '211.94.66.147', '213.169.251.35', '216.221.188.182', '216.234.179.13'])
 
+    ##
+    # @brief    set default parameters, set logger
+    #
+    # @param    max_window
+    # @param    max_timeout
+    # @param    max_retry
+    # @param    proxy
+    #
+    # @return   
     def __init__(self, max_window=4, max_timeout=16, max_retry=4, proxy=''):
         self.max_window = max_window
         self.max_retry = max_retry
@@ -196,6 +220,16 @@ class Http(object):
             iplist.update(ips)
         return iplist
 
+
+
+    ##
+    # @brief    
+    #
+    # @param    host, port: target host and port
+    # @param    timeout:    connection time out time
+    # @param    source_address: source ip address
+    #
+    # @return   
     def create_connection(self, (host, port), timeout=None, source_address=None):
         def _create_connection((ip, port), timeout, queue):
             sock = None
@@ -215,14 +249,18 @@ class Http(object):
         def _close_connection(count, queue):
             for i in xrange(count):
                 sock = queue.get()
+
         sock = None
+
+        # Get ip list for this host
         iplist = self.dns_resolve(host)
         window = (self.max_window+1)//2
+
+        # Create multi-connection to the host
         for i in xrange(self.max_retry):
             window += i
             connection_time = self.ssl_connection_time if port == 443 else self.connection_time
             ips = heapq.nsmallest(window, iplist, key=lambda x:connection_time.get('%s:%s'%(x,port),0)) + random.sample(iplist, min(len(iplist), window))
-            # print ips
             queue = gevent.queue.Queue()
             for ip in ips:
                 gevent.spawn(_create_connection, (ip, port), timeout, queue)
@@ -355,6 +393,7 @@ class Http(object):
             if remote:
                 remote.close()
 
+
     ##
     # @brief    parse http request
     #
@@ -381,6 +420,20 @@ class Http(object):
             headers[keyword] = value
         return method, path, version.strip(), headers
 
+
+    ##
+    # @brief    send http request to a host
+    #
+    # @param    method:     request method (GET POS ...)
+    # @param    url:        requesting url
+    # @param    payload:    payload of the request
+    # @param    headers:    request headers
+    # @param    fullurl:    
+    # @param    bufsize:    http buffer size
+    # @param    crlf:       True: do crlf injection, False: not do crlf injection
+    # @param    return_sock: True: return the socket, False: return response
+    #
+    # @return   depend on return_sock parameter
     def _request(self, sock, method, path, protocol_version, headers, payload, bufsize=__bufsize__, crlf=None, return_sock=None):
         skip_headers = self.skip_headers
         need_crlf = self.crlf
@@ -399,6 +452,7 @@ class Http(object):
 
         request_data += '\r\n'
 
+        # Send the request
         if not payload:
             sock.sendall(request_data)
         else:
@@ -435,8 +489,25 @@ class Http(object):
             response = None
         return response
 
+
+
+    ##
+    # @brief    wrap __request(), modify header, handle https, etc.
+    #
+    # @param    method:     request method (GET POS ...)
+    # @param    url:        requesting url
+    # @param    payload:    payload of the request
+    # @param    headers:    request headers
+    # @param    fullurl:    
+    # @param    bufsize:    http buffer size
+    # @param    crlf:       
+    # @param    return_sock:
+    #
+    # @return   response object
     def request(self, method, url, payload=None, headers={}, fullurl=False, bufsize=__bufsize__, crlf=None, return_sock=None):
         scheme, netloc, path, params, query, fragment = urlparse.urlparse(url)
+
+        # Format requset parameters: extract host and port, compose path, add Host field in header
         if not re.search(r':\d+$', netloc):
             host = netloc
             port = 443 if scheme == 'https' else 80
@@ -444,18 +515,13 @@ class Http(object):
             host, _, port = netloc.rpartition(':')
             port = int(port)
 
-        #print "path: " + path
-        #print "query: " + query
-        #print "url: " + url
-        #print "host: " + host
-        #print "port: " + str(port)
-
         if query:
             path += '?' + query
 
         if 'Host' not in headers:
             headers['Host'] = host
 
+        # Establish connection, send the request and return response
         for i in xrange(self.max_retry):
             sock = None
             ssl_sock = None
