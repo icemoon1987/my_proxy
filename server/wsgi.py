@@ -35,41 +35,43 @@ except:
 
 def application(environ, start_response):
 
+    # Health check by openshift
     if environ['PATH_INFO'] == '/health':
-        # health check by openshift
         ctype = 'text/plain'
         response_body = "1"
 
+    # Environment params by openshift
     elif environ['PATH_INFO'] == '/env':
-        # environment params by openshift
         ctype = 'text/plain'
         response_body = ['%s: %s' % (key, value) for key, value in sorted(environ.items())]
         response_body = '\n'.join(response_body)
 
+    # GET request will get a fake page 
     elif environ['REQUEST_METHOD'] == 'GET':
-        # GET request will get a fake page 
         ctype = 'text/html'
         response_body = "<html><body><p>Hello World!</p></body></html>"
 
+    # Process requests from proxy client
     elif environ['REQUEST_METHOD'] == 'POST':
-        # process requests from proxy client
         ctype = 'text/html'
         try:
-            # parse proxy client requests
+            # Parse proxy client requests
             wsgi_input = environ["wsgi.input"]
             data = wsgi_input.read(2)
-
-            # decompress user request
             metadata_length, = struct.unpack('!h', data)
             metadata = wsgi_input.read(metadata_length)
             metadata = zlib.decompress(metadata, -15)
+
+            # Parse real headers, method, url of user browser's request
             headers  = dict(x.split(':', 1) for x in metadata.splitlines() if x)
             method   = headers.pop('User-Method')
             url   = headers.pop('User-Url')
 
+            # Parse other user defined headers
             kwargs   = {}
             any(kwargs.__setitem__(x[2:].lower(), headers.pop(x)) for x in headers.keys() if x.startswith('User-'))
 
+            # TODO: Why doing this?
             headers['Connection'] = 'close'
 
             payload = environ['wsgi.input'].read() if 'Content-Length' in headers else None
@@ -84,7 +86,7 @@ def application(environ, start_response):
 
             logging.info('%s "user-method:%s user-url:%s %s" - -', environ['REMOTE_ADDR'], method, url, 'HTTP/1.1')
 
-            # TODO: process CONNECT request 
+            # There should not be any CONNECT request
             if method != 'CONNECT':
 
                 # get user request url
@@ -137,6 +139,7 @@ def application(environ, start_response):
 # Below for testing only
 #
 if __name__ == '__main__':
+
     from wsgiref.simple_server import make_server
 
     msg = "test"

@@ -264,7 +264,7 @@ class proxy_client(object):
 		logging.exception('socket error: %s', e)
 		raise
 
-            # Bad request, TODO: what's this?
+            # Bad request, stop doing crlf injection
 	    if response.app_status in (400, 405):
 		http.crlf = 0
 
@@ -333,10 +333,10 @@ class proxy_client(object):
 	metadata = 'User-Method:%s\nUser-Url:%s\n%s\n%s\n' % (method, url, '\n'.join('User-%s:%s'%(k,v) for k,v in kwargs.iteritems() if v), '\n'.join('%s:%s'%(k,v) for k,v in headers.iteritems() if k not in skip_headers))
 	metadata = zlib.compress(metadata)[2:-4]
 
-        # TODO: why send packed metadata and metadata in the same time?
+        # Send packed metadata lenth, metadata and payload
 	app_payload = '%s%s%s' % (struct.pack('!h', len(metadata)), metadata, payload)
 
-        # Send the composed request to proxy server by a POST request. TODO: what is crlf?
+        # Send the composed request to proxy server by a POST request. DO NOT DO CRLF INJECTION AT PRESENT.
 	response = http.request('POST', fetchserver, app_payload, {'Content-Length':len(app_payload)}, crlf=0)
 
         # The status of the proxy server's response is stored in app_status.
