@@ -303,8 +303,10 @@ class proxy_client(object):
         return
 
     ##
-    # @brief    Wrap the user browser's request into a POST request, send the POST request to proxy_server
+    # @brief    Wrap the user browser's request into a POST request's payload, send the POST request to proxy_server
     #           Get the proxy_server's response, unwarp the content.
+    #           
+    #           request payload structure: metadata_length(2 bytes), metadata, payload
     #
     # @param    method:     request method(GET POST ...)
     # @param    url:        requesting url

@@ -55,7 +55,7 @@ def application(environ, start_response):
     elif environ['REQUEST_METHOD'] == 'POST':
         ctype = 'text/html'
         try:
-            # Parse proxy client requests
+            # Parse proxy client requests. First read 2 bytes of metadata length, then read the metadata
             wsgi_input = environ["wsgi.input"]
             data = wsgi_input.read(2)
             metadata_length, = struct.unpack('!h', data)
@@ -71,18 +71,16 @@ def application(environ, start_response):
             kwargs   = {}
             any(kwargs.__setitem__(x[2:].lower(), headers.pop(x)) for x in headers.keys() if x.startswith('User-'))
 
-            # TODO: Why doing this?
+            # Use new connection for every request.
             headers['Connection'] = 'close'
 
+            # Read the real payload, decompress it if necessary
             payload = environ['wsgi.input'].read() if 'Content-Length' in headers else None
-
             if 'Content-Encoding' in headers:
                 if headers['Content-Encoding'] == 'deflate':
                     payload = zlib.decompress(payload, -15)
                     headers['Content-Length'] = str(len(payload))
                     del headers['Content-Encoding']
-
-            timeout = 60
 
             logging.info('%s "user-method:%s user-url:%s %s" - -', environ['REMOTE_ADDR'], method, url, 'HTTP/1.1')
 
@@ -98,7 +96,7 @@ def application(environ, start_response):
                     path += '?' + query
 
                 # access the url and get the result
-                conn = HTTPConnection(netloc, timeout=timeout)
+                conn = HTTPConnection(netloc, timeout=30)
                 conn.request(method, path, body=payload, headers=headers)
                 response = conn.getresponse()
 
@@ -117,13 +115,12 @@ def application(environ, start_response):
                     else:
                         data += tmp
                 
-                #data = response.read()
-
                 start_response('200 OK', headers)
                 response_body = data
 
                 return [response_body]
 
+        # In case of error, send the error message back
         except Exception, ex:
             ctype = 'text/html'
             response_body = "<html><body><p>" + ex.__str__() + "</p></body></html>"
