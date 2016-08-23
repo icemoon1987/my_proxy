@@ -256,10 +256,11 @@ class proxy_client(object):
 		response = self.paas_urlfetch(method, path, headers, payload, cfg.PROXY_SERVER)
 		logging.info('%s:%s "%s %s HTTP/1.1" %s -', remote_addr, remote_port, method, path, response.status)
 
-	    except socket.error as e:
+	    #except socket.error as e:
                 # TODO: why ignore some exception? These exception will send the response back to user browser
-		if e.reason[0] not in (11004, 10051, 10060, 'timed out', 10054):
-		    raise
+		#if e.reason[0] not in (11004, 10051, 10060, 'timed out', 10054):
+		    #raise
+
 	    except Exception as e:
 		logging.exception('socket error: %s', e)
 		raise
