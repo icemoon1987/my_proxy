@@ -126,6 +126,7 @@ def application(environ, start_response):
             response_body = "<html><body><p>" + ex.__str__() + "</p></body></html>"
 
     status = '200 OK'
+    ctype = 'text/html'
     response_headers = [('Content-Type', ctype), ('Content-Length', str(len(response_body)))]
     start_response(status, response_headers)
 
