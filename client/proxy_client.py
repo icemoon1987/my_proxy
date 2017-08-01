@@ -361,6 +361,10 @@ class proxy_client(object):
     # @return  none 
     def run(self):
 
+        if not os.path.exists("./certs"):
+            os.mkdir("./certs")
+
+
         # Check certificate, the certificate will be used to warp https connections
 	CertUtil.check_ca()
 
